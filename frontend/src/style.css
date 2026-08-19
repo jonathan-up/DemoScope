@@ -25,6 +25,12 @@ body {
   background: #f4f6f8;
 }
 
+:root[data-theme="dark"],
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] #app {
+  background: #15181d;
+}
+
 .demo-app {
   color-scheme: light;
   --canvas: #f4f6f8;

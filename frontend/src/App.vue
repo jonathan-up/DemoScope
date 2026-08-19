@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { OpenDemo } from '../wailsjs/go/main/App'
 import {
   buildPlayerStats,
@@ -24,12 +24,15 @@ const errorMessage = ref('')
 const activeTab = ref<TabID>('overview')
 const killerFilter = ref('')
 const victimFilter = ref('')
-const theme = ref<Theme>('light')
 
-onMounted(() => {
+function initialTheme(): Theme {
+  const preloaded = document.documentElement.dataset.theme
+  if (preloaded === 'light' || preloaded === 'dark') return preloaded
   const saved = localStorage.getItem('demoscope-theme')
-  if (saved === 'light' || saved === 'dark') theme.value = saved
-})
+  return saved === 'dark' ? 'dark' : 'light'
+}
+
+const theme = ref<Theme>(initialTheme())
 
 const kills = computed(() => demo.value?.kills ?? [])
 const rounds = computed(() => demo.value?.rounds ?? [])
@@ -137,6 +140,8 @@ async function openDemo() {
 
 function toggleTheme() {
   theme.value = theme.value === 'light' ? 'dark' : 'light'
+  document.documentElement.dataset.theme = theme.value
+  document.documentElement.style.colorScheme = theme.value
   localStorage.setItem('demoscope-theme', theme.value)
 }
 

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"embed"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:frontend/dist
@@ -20,11 +22,12 @@ func main() {
 		MinWidth:                 1040,
 		MinHeight:                680,
 		Frameless:                false,
-		StartHidden:              false,
+		StartHidden:              true,
 		WindowStartState:         options.Normal,
 		BackgroundColour:         &options.RGBA{R: 8, G: 12, B: 17, A: 1},
 		AssetServer:              &assetserver.Options{Assets: assets},
 		OnStartup:                app.startup,
+		OnDomReady:               func(ctx context.Context) { runtime.WindowShow(ctx) },
 		EnableDefaultContextMenu: false,
 		Bind:                     []interface{}{app},
 	})
