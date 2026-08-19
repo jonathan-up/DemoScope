@@ -8,23 +8,22 @@ import {
   formatDuration,
   formatRecordedAt,
   initials,
-  playerInKill,
   shortTeam,
   teamName,
   weaponName,
 } from './demo'
-import type { DemoData, Kill, PlayerStat } from './types'
+import type { DemoData, Kill, PlayerReference, PlayerStat } from './types'
 
 type TabID = 'overview' | 'players' | 'kills' | 'rounds' | 'technical'
-type KillFilter = 'all' | 'headshot' | 'pov'
 type Theme = 'light' | 'dark'
+type KillPartyOption = { value: string; label: string; count: number }
 
 const demo = ref<DemoData | null>(null)
 const loading = ref(false)
 const errorMessage = ref('')
 const activeTab = ref<TabID>('overview')
-const killSearch = ref('')
-const killFilter = ref<KillFilter>('all')
+const killerFilter = ref('')
+const victimFilter = ref('')
 const theme = ref<Theme>('light')
 
 onMounted(() => {
@@ -78,17 +77,39 @@ const tabs = computed(() => [
   { id: 'technical' as const, label: 'Demo 信息', count: null },
 ])
 
-const filteredKills = computed(() => {
-  const query = killSearch.value.trim().toLocaleLowerCase()
-  return kills.value.filter((kill) => {
-    if (killFilter.value === 'headshot' && !kill.headshot) return false
-    if (killFilter.value === 'pov' && !playerInKill(kill, demo.value?.pov_player)) return false
-    if (!query) return true
-    return [kill.killer?.name, kill.victim.name, kill.weapon, weaponName(kill.weapon)]
-      .filter(Boolean)
-      .some((value) => value!.toLocaleLowerCase().includes(query))
-  })
-})
+function killPartyKey(player?: PlayerReference): string {
+  if (!player) return 'world'
+  if (player.steam_id64) return `steam:${player.steam_id64}`
+  if (player.name) return `name:${player.name.toLocaleLowerCase()}`
+  return `slot:${player.slot_zero_based}`
+}
+
+function buildKillPartyOptions(players: Array<PlayerReference | undefined>): KillPartyOption[] {
+  const options = new Map<string, KillPartyOption>()
+  for (const player of players) {
+    const value = killPartyKey(player)
+    const existing = options.get(value)
+    if (existing) {
+      existing.count++
+      continue
+    }
+    options.set(value, {
+      value,
+      label: player?.name || (player ? `Slot ${player.slot_zero_based + 1}` : 'WORLD / 环境'),
+      count: 1,
+    })
+  }
+  return [...options.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+}
+
+const killerOptions = computed(() => buildKillPartyOptions(kills.value.map((kill) => kill.killer)))
+const victimOptions = computed(() => buildKillPartyOptions(kills.value.map((kill) => kill.victim)))
+
+const filteredKills = computed(() => kills.value.filter((kill) => {
+  if (killerFilter.value && killPartyKey(kill.killer) !== killerFilter.value) return false
+  if (victimFilter.value && killPartyKey(kill.victim) !== victimFilter.value) return false
+  return true
+}))
 
 const matchLabel = computed(() => {
   if (!demo.value) return ''
@@ -104,8 +125,8 @@ async function openDemo() {
     if (result) {
       demo.value = result as unknown as DemoData
       activeTab.value = 'overview'
-      killSearch.value = ''
-      killFilter.value = 'all'
+      killerFilter.value = ''
+      victimFilter.value = ''
     }
   } catch (error) {
     errorMessage.value = String(error).replace(/^Error:\s*/, '')
@@ -331,7 +352,7 @@ function statWidth(player: PlayerStat): string {
                 <div v-for="kill in recentKills" :key="`${kill.frame}-${kill.victim.slot_zero_based}`" class="grid grid-cols-[44px_7px_minmax(0,1fr)] items-center gap-2.5 px-5 py-3 text-[11px] hover:bg-[var(--row-hover)]">
                   <span class="tabular text-[10px] text-[var(--text-faint)]">{{ formatDuration(kill.time_seconds) }}</span>
                   <span class="h-2 w-2 rounded-full" :class="killDotClass(kill)"></span>
-                  <p class="flex min-w-0 items-center gap-1.5"><span class="truncate font-medium text-[var(--text)]">{{ kill.killer?.name || 'WORLD' }}</span><span class="shrink-0 text-[9px] text-[var(--text-faint)]">{{ weaponName(kill.weapon) }}</span><span v-if="kill.headshot" class="shrink-0 text-orange-500">◆</span><span class="shrink-0 text-[var(--text-faint)]">→</span><span class="truncate text-[var(--text-muted)]">{{ kill.victim.name }}</span></p>
+                  <p class="flex min-w-0 items-center gap-1.5"><span class="truncate font-medium text-[var(--text)]">{{ kill.killer?.name || 'WORLD' }}</span><span class="shrink-0 text-[9px] text-[var(--text-faint)]">{{ weaponName(kill.weapon) }}</span><span v-if="kill.headshot" class="shrink-0 text-[9px] font-medium text-orange-500">爆头</span><span class="shrink-0 text-[var(--text-faint)]">→</span><span class="truncate text-[var(--text-muted)]">{{ kill.victim.name }}</span></p>
                 </div>
               </div>
               <div v-else class="py-14 text-center text-xs text-[var(--text-faint)]">没有可用的击杀数据</div>
@@ -372,22 +393,23 @@ function statWidth(player: PlayerStat): string {
 
           <section v-else-if="activeTab === 'kills'" class="mt-5 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
             <div class="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
-              <div><h2 class="text-sm font-semibold text-[var(--text)]">击杀记录</h2><p class="mt-1 text-xs text-[var(--text-faint)]">时间从 Demo Playback 段开始计算</p></div>
-              <div class="flex items-center gap-2">
-                <div class="relative"><svg class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-faint)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg><input v-model="killSearch" type="text" placeholder="搜索玩家或武器" class="h-9 w-56 rounded-lg border border-[var(--border)] bg-[var(--surface)] pl-9 pr-3 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-faint)] focus:border-[#7195cf]"/></div>
-                <select v-model="killFilter" class="h-9 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs text-[var(--text-secondary)] outline-none focus:border-[#7195cf]"><option value="all">全部事件</option><option value="headshot">仅爆头</option><option v-if="!isHLTV" value="pov">与 POV 玩家有关</option></select>
+              <div><h2 class="text-sm font-semibold text-[var(--text)]">击杀记录</h2><p class="mt-1 text-xs text-[var(--text-faint)]">{{ filteredKills.length }} / {{ kills.length }} 条事件 · 时间从 Demo Playback 段开始计算</p></div>
+              <div class="flex items-end gap-2.5">
+                <label class="flex flex-col gap-1.5"><span class="text-[10px] font-medium text-[var(--text-faint)]">击杀者</span><select v-model="killerFilter" class="h-9 w-48 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs text-[var(--text-secondary)] outline-none focus:border-[#7195cf]"><option value="">全部击杀者</option><option v-for="option in killerOptions" :key="option.value" :value="option.value">{{ option.label }}（{{ option.count }}）</option></select></label>
+                <label class="flex flex-col gap-1.5"><span class="text-[10px] font-medium text-[var(--text-faint)]">受害者</span><select v-model="victimFilter" class="h-9 w-48 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs text-[var(--text-secondary)] outline-none focus:border-[#7195cf]"><option value="">全部受害者</option><option v-for="option in victimOptions" :key="option.value" :value="option.value">{{ option.label }}（{{ option.count }}）</option></select></label>
+                <button v-if="killerFilter || victimFilter" class="h-9 rounded-lg border border-[var(--border)] px-3 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)]" @click="killerFilter = ''; victimFilter = ''">清除</button>
               </div>
             </div>
-            <div class="grid grid-cols-[82px_8px_minmax(170px,1fr)_130px_42px_minmax(170px,1fr)_92px] items-center gap-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] px-5 py-3 text-[10px] font-medium text-[var(--text-faint)]">
-              <span>时间</span><span></span><span>击杀者</span><span class="text-center">武器</span><span></span><span>被击杀者</span><span class="text-right">帧</span>
+            <div class="grid grid-cols-[82px_8px_minmax(170px,1fr)_130px_52px_minmax(170px,1fr)_92px] items-center gap-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] px-5 py-3 text-[10px] font-medium text-[var(--text-faint)]">
+              <span>时间</span><span></span><span>击杀者</span><span class="text-center">武器</span><span class="text-center">类型</span><span>被击杀者</span><span class="text-right">帧</span>
             </div>
             <div v-if="filteredKills.length" class="divide-y divide-[var(--border)]">
-              <div v-for="kill in filteredKills" :key="`${kill.frame}-${kill.killer?.slot_zero_based}-${kill.victim.slot_zero_based}`" class="grid grid-cols-[82px_8px_minmax(170px,1fr)_130px_42px_minmax(170px,1fr)_92px] items-center gap-4 px-5 py-3 text-xs hover:bg-[var(--row-hover)]">
+              <div v-for="kill in filteredKills" :key="`${kill.frame}-${kill.killer?.slot_zero_based}-${kill.victim.slot_zero_based}`" class="grid grid-cols-[82px_8px_minmax(170px,1fr)_130px_52px_minmax(170px,1fr)_92px] items-center gap-4 px-5 py-3 text-xs hover:bg-[var(--row-hover)]">
                 <span class="tabular text-[10px] text-[var(--text-faint)]">{{ formatDuration(kill.time_seconds, true) }}</span>
                 <span class="h-5 w-1 rounded-full" :class="killDotClass(kill)"></span>
                 <div class="min-w-0"><p class="truncate font-medium text-[var(--text)]">{{ kill.killer?.name || 'WORLD' }}</p><p class="mt-0.5 text-[9px] text-[var(--text-faint)]">{{ kill.killer ? shortTeam(kill.killer.team) : '环境' }}</p></div>
                 <span class="justify-self-center rounded-md bg-[var(--surface-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--text-secondary)]">{{ weaponName(kill.weapon) }}</span>
-                <span class="text-center" :class="kill.headshot ? 'text-orange-500' : 'text-[var(--text-faint)]'">{{ kill.headshot ? '◆' : '→' }}</span>
+                <span class="text-center text-[10px] font-medium" :class="kill.headshot ? 'text-orange-500' : 'text-[var(--text-faint)]'">{{ kill.headshot ? '爆头' : '普通' }}</span>
                 <div class="min-w-0"><p class="truncate text-[var(--text-secondary)]">{{ kill.victim.name || `Slot ${kill.victim.slot_zero_based + 1}` }}</p><p class="mt-0.5 text-[9px] text-[var(--text-faint)]">{{ shortTeam(kill.victim.team) }}</p></div>
                 <span class="tabular text-right text-[10px] text-[var(--text-faint)]">{{ kill.frame.toLocaleString() }}</span>
               </div>

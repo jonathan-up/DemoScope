@@ -1,4 +1,4 @@
-import type { DemoData, Kill, Player, PlayerReference, PlayerStat } from './types'
+import type { DemoData, Player, PlayerReference, PlayerStat } from './types'
 
 const weapons: Record<string, string> = {
   ak47: 'AK-47', m4a1: 'M4A1', awp: 'AWP', deagle: 'Desert Eagle',
@@ -119,19 +119,6 @@ export function buildPlayerStats(demo: DemoData): PlayerStat[] {
     stat.kd = stat.deaths === 0 ? stat.kills : stat.kills / stat.deaths
   }
   return stats.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || a.name.localeCompare(b.name))
-}
-
-export function playerInKill(kill: Kill, player?: PlayerReference): boolean {
-  if (!player) return false
-  return (!!kill.killer && refMatchesPlayer(kill.killer, {
-    name: player.name,
-    steam_id64: player.steam_id64,
-    slots_zero_based: [player.slot_zero_based],
-  })) || refMatchesPlayer(kill.victim, {
-    name: player.name,
-    steam_id64: player.steam_id64,
-    slots_zero_based: [player.slot_zero_based],
-  })
 }
 
 export function initials(name?: string): string {
