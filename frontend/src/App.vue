@@ -12,11 +12,13 @@ import {
   teamName,
   weaponName,
 } from './demo'
-import type { DemoData, Kill, PlayerReference, PlayerStat } from './types'
+import type { DemoData, Kill, PlayerReference, PlayerStat, Round } from './types'
+import logoUrl from './assets/demoscope-logo.png'
 
 type TabID = 'overview' | 'players' | 'kills' | 'rounds' | 'technical'
 type Theme = 'light' | 'dark'
 type KillPartyOption = { value: string; label: string; count: number }
+type KillRoundGroup = { key: string; round?: Round; kills: Kill[] }
 
 const demo = ref<DemoData | null>(null)
 const loading = ref(false)
@@ -114,6 +116,27 @@ const filteredKills = computed(() => kills.value.filter((kill) => {
   return true
 }))
 
+function killEventKey(kill: Kill): string {
+  return [kill.frame, kill.time_seconds, kill.killer?.slot_zero_based ?? -1, kill.victim.slot_zero_based, kill.weapon].join(':')
+}
+
+const filteredKillGroups = computed<KillRoundGroup[]>(() => {
+  const visibleKeys = new Set(filteredKills.value.map(killEventKey))
+  const assignedKeys = new Set<string>()
+  const groups: KillRoundGroup[] = []
+
+  for (const round of rounds.value) {
+    const roundKills = (round.kills ?? []).filter((kill) => visibleKeys.has(killEventKey(kill)))
+    if (!roundKills.length) continue
+    roundKills.forEach((kill) => assignedKeys.add(killEventKey(kill)))
+    groups.push({ key: `round-${round.number}`, round, kills: roundKills })
+  }
+
+  const unassigned = filteredKills.value.filter((kill) => !assignedKeys.has(killEventKey(kill)))
+  if (unassigned.length) groups.push({ key: 'unassigned', kills: unassigned })
+  return groups
+})
+
 const matchLabel = computed(() => {
   if (!demo.value) return ''
   if (isHLTV.value) return demo.value.server?.name || demo.value.hltv_proxy?.name || 'HLTV Match Demo'
@@ -170,7 +193,7 @@ function statWidth(player: PlayerStat): string {
   <div class="demo-app flex h-screen min-h-[680px] flex-col overflow-hidden" :data-theme="theme">
     <header class="titlebar-drag relative z-30 flex h-14 shrink-0 items-center border-b border-[var(--border)] bg-[var(--surface)] px-5">
       <div class="flex items-center gap-3">
-        <div class="grid h-8 w-8 place-items-center rounded-lg bg-[#3564b6] text-sm font-bold text-white">D</div>
+        <img :src="logoUrl" alt="" class="h-8 w-8 shrink-0" draggable="false" />
         <div class="flex items-baseline gap-2.5">
           <span class="text-sm font-semibold tracking-[-0.01em] text-[var(--text)]">DemoScope</span>
           <span class="text-[10px] text-[var(--text-faint)]">CS 1.6 Demo 查看器</span>
@@ -218,9 +241,7 @@ function statWidth(player: PlayerStat): string {
 
     <main v-if="!demo" class="flex min-h-0 flex-1 items-center justify-center bg-[var(--canvas)] px-8">
       <section class="w-full max-w-[760px] rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-14 py-12 shadow-[0_8px_30px_rgba(24,33,47,.06)]">
-        <div class="mx-auto grid h-14 w-14 place-items-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-          <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 7.5h6l2-2h9v13h-17z" stroke-linejoin="round"/><path d="M3.5 9.5h17"/><path d="m10 12 4 2.5-4 2.5z"/></svg>
-        </div>
+        <img :src="logoUrl" alt="DemoScope" class="mx-auto h-16 w-16" draggable="false" />
         <div class="mt-6 text-center">
           <h1 class="text-2xl font-semibold tracking-[-0.025em] text-[var(--text)]">打开一份 Counter-Strike 1.6 Demo</h1>
           <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-[var(--text-muted)]">读取 POV 或 HLTV `.dem` 文件，查看比赛信息、玩家统计、击杀记录与回合比分。文件只在本机解析。</p>
@@ -408,15 +429,32 @@ function statWidth(player: PlayerStat): string {
             <div class="grid grid-cols-[82px_8px_minmax(170px,1fr)_130px_52px_minmax(170px,1fr)_92px] items-center gap-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] px-5 py-3 text-[10px] font-medium text-[var(--text-faint)]">
               <span>时间</span><span></span><span>击杀者</span><span class="text-center">武器</span><span class="text-center">类型</span><span>被击杀者</span><span class="text-right">帧</span>
             </div>
-            <div v-if="filteredKills.length" class="divide-y divide-[var(--border)]">
-              <div v-for="kill in filteredKills" :key="`${kill.frame}-${kill.killer?.slot_zero_based}-${kill.victim.slot_zero_based}`" class="grid grid-cols-[82px_8px_minmax(170px,1fr)_130px_52px_minmax(170px,1fr)_92px] items-center gap-4 px-5 py-3 text-xs hover:bg-[var(--row-hover)]">
-                <span class="tabular text-[10px] text-[var(--text-faint)]">{{ formatDuration(kill.time_seconds, true) }}</span>
-                <span class="h-5 w-1 rounded-full" :class="killDotClass(kill)"></span>
-                <div class="min-w-0"><p class="truncate font-medium text-[var(--text)]">{{ kill.killer?.name || 'WORLD' }}</p><p class="mt-0.5 text-[9px] text-[var(--text-faint)]">{{ kill.killer ? shortTeam(kill.killer.team) : '环境' }}</p></div>
-                <span class="justify-self-center rounded-md bg-[var(--surface-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--text-secondary)]">{{ weaponName(kill.weapon) }}</span>
-                <span class="text-center text-[10px] font-medium" :class="kill.headshot ? 'text-orange-500' : 'text-[var(--text-faint)]'">{{ kill.headshot ? '爆头' : '普通' }}</span>
-                <div class="min-w-0"><p class="truncate text-[var(--text-secondary)]">{{ kill.victim.name || `Slot ${kill.victim.slot_zero_based + 1}` }}</p><p class="mt-0.5 text-[9px] text-[var(--text-faint)]">{{ shortTeam(kill.victim.team) }}</p></div>
-                <span class="tabular text-right text-[10px] text-[var(--text-faint)]">{{ kill.frame.toLocaleString() }}</span>
+            <div v-if="filteredKills.length">
+              <div v-for="group in filteredKillGroups" :key="group.key" class="border-b border-[var(--border)] last:border-b-0">
+                <div class="flex items-center justify-between bg-[var(--surface-subtle)] px-5 py-2.5">
+                  <div v-if="group.round" class="flex items-center gap-2.5">
+                    <span class="tabular text-xs font-semibold text-[var(--text)]">第 {{ group.round.number }} 回合</span>
+                    <span class="h-2 w-2 rounded-full" :class="teamDotClass(group.round.winner)"></span>
+                    <span class="text-[10px] text-[var(--text-muted)]">{{ teamName(group.round.winner) }} 胜</span>
+                  </div>
+                  <div v-else><span class="text-xs font-semibold text-[var(--text)]">回合外事件</span><span class="ml-2 text-[10px] text-[var(--text-faint)]">无法从 TeamScore 归属</span></div>
+                  <div class="flex items-center gap-4 text-[10px] text-[var(--text-faint)]">
+                    <span v-if="group.round" class="tabular">{{ formatDuration(group.round.start_seconds) }}–{{ formatDuration(group.round.end_seconds) }}</span>
+                    <span v-if="group.round" class="tabular"><span class="text-blue-600">{{ group.round.ct_score }}</span><span class="mx-1 text-[var(--text-faint)]">:</span><span class="text-orange-600">{{ group.round.terrorist_score }}</span></span>
+                    <span class="tabular rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-[var(--text-muted)]">{{ group.kills.length }} 次击杀</span>
+                  </div>
+                </div>
+                <div class="divide-y divide-[var(--border)]">
+                  <div v-for="kill in group.kills" :key="killEventKey(kill)" class="grid grid-cols-[82px_8px_minmax(170px,1fr)_130px_52px_minmax(170px,1fr)_92px] items-center gap-4 px-5 py-3 text-xs hover:bg-[var(--row-hover)]">
+                    <span class="tabular text-[10px] text-[var(--text-faint)]">{{ formatDuration(kill.time_seconds, true) }}</span>
+                    <span class="h-5 w-1 rounded-full" :class="killDotClass(kill)"></span>
+                    <div class="min-w-0"><p class="truncate font-medium text-[var(--text)]">{{ kill.killer?.name || 'WORLD' }}</p><p class="mt-0.5 text-[9px] text-[var(--text-faint)]">{{ kill.killer ? shortTeam(kill.killer.team) : '环境' }}</p></div>
+                    <span class="justify-self-center rounded-md bg-[var(--surface-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--text-secondary)]">{{ weaponName(kill.weapon) }}</span>
+                    <span class="text-center text-[10px] font-medium" :class="kill.headshot ? 'text-orange-500' : 'text-[var(--text-faint)]'">{{ kill.headshot ? '爆头' : '普通' }}</span>
+                    <div class="min-w-0"><p class="truncate text-[var(--text-secondary)]">{{ kill.victim.name || `Slot ${kill.victim.slot_zero_based + 1}` }}</p><p class="mt-0.5 text-[9px] text-[var(--text-faint)]">{{ shortTeam(kill.victim.team) }}</p></div>
+                    <span class="tabular text-right text-[10px] text-[var(--text-faint)]">{{ kill.frame.toLocaleString() }}</span>
+                  </div>
+                </div>
               </div>
             </div>
             <div v-else class="py-16 text-center text-xs text-[var(--text-faint)]">没有符合条件的击杀事件</div>
