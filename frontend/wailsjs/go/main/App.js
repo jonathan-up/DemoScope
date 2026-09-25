@@ -9,3 +9,11 @@ export function OpenDemo() {
 export function ParseDemo(arg1) {
   return window['go']['main']['App']['ParseDemo'](arg1);
 }
+
+export function SavePlayerReplacement(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SavePlayerReplacement'](arg1, arg2, arg3, arg4);
+}
+
+export function SavePrefixedPlayers(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SavePrefixedPlayers'](arg1, arg2, arg3);
+}

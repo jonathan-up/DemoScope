@@ -71,9 +71,11 @@ type Round struct {
 }
 
 type networkFrame struct {
-	time  float64
-	frame uint32
-	data  []byte
+	time         float64
+	frame        uint32
+	data         []byte
+	lengthOffset int64
+	dataOffset   int64
 }
 
 type timelineState struct {
@@ -487,6 +489,7 @@ func forEachNetworkFrame(r io.ReaderAt, networkProtocol uint32, entry DirectoryE
 			if err := skipCount(reader, int64(netInfoSize), &consumed); err != nil {
 				return fmt.Errorf("skip network frame info: %w", err)
 			}
+			lengthOffset := int64(entry.Offset) + consumed
 			lengthBytes := make([]byte, 4)
 			if err := readFullCount(reader, lengthBytes, &consumed); err != nil {
 				return fmt.Errorf("read network chunk length: %w", err)
@@ -495,11 +498,12 @@ func forEachNetworkFrame(r io.ReaderAt, networkProtocol uint32, entry DirectoryE
 			if chunkLength < 0 || chunkLength > maxNetworkChunkSize || chunkLength > segmentLength-consumed {
 				return fmt.Errorf("invalid network chunk length %d", chunkLength)
 			}
+			dataOffset := int64(entry.Offset) + consumed
 			data := make([]byte, int(chunkLength))
 			if err := readFullCount(reader, data, &consumed); err != nil {
 				return fmt.Errorf("read network chunk: %w", err)
 			}
-			if err := visit(networkFrame{time: float64(timeSeconds), frame: frameNumber, data: data}); err != nil {
+			if err := visit(networkFrame{time: float64(timeSeconds), frame: frameNumber, data: data, lengthOffset: lengthOffset, dataOffset: dataOffset}); err != nil {
 				return err
 			}
 		case 2:

@@ -5,3 +5,7 @@ import {goldsrc} from '../models';
 export function OpenDemo():Promise<goldsrc.Demo>;
 
 export function ParseDemo(arg1:string):Promise<goldsrc.Demo>;
+
+export function SavePlayerReplacement(arg1:string,arg2:string,arg3:string,arg4:string):Promise<goldsrc.Demo>;
+
+export function SavePrefixedPlayers(arg1:string,arg2:Array<string>,arg3:string):Promise<goldsrc.Demo>;

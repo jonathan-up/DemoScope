@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { OpenDemo } from '../wailsjs/go/main/App'
+import { OpenDemo, SavePlayerReplacement, SavePrefixedPlayers } from '../wailsjs/go/main/App'
 import {
   buildPlayerStats,
   fileName,
@@ -22,10 +22,17 @@ type KillRoundGroup = { key: string; round?: Round; kills: Kill[] }
 
 const demo = ref<DemoData | null>(null)
 const loading = ref(false)
+const loadingAction = ref<'parse' | 'save'>('parse')
 const errorMessage = ref('')
 const activeTab = ref<TabID>('overview')
 const killerFilter = ref('')
 const victimFilter = ref('')
+const sourceSteamID64 = ref('')
+const replacementName = ref('')
+const replacementSteamID64 = ref('')
+const namePrefix = ref('')
+const prefixSelectedSteamIDs = ref<string[]>([])
+const saveMessage = ref('')
 
 function initialTheme(): Theme {
   const preloaded = document.documentElement.dataset.theme
@@ -39,6 +46,8 @@ const theme = ref<Theme>(initialTheme())
 const kills = computed(() => demo.value?.kills ?? [])
 const rounds = computed(() => demo.value?.rounds ?? [])
 const playerStats = computed(() => demo.value ? buildPlayerStats(demo.value) : [])
+const editablePlayers = computed(() => (demo.value?.players ?? []).filter((player) => player.steam_id64))
+const selectedSourcePlayer = computed(() => editablePlayers.value.find((player) => player.steam_id64 === sourceSteamID64.value))
 const isHLTV = computed(() => demo.value?.recording_type === 'hltv')
 
 const finalScore = computed(() => {
@@ -144,6 +153,7 @@ const matchLabel = computed(() => {
 })
 
 async function openDemo() {
+  loadingAction.value = 'parse'
   loading.value = true
   errorMessage.value = ''
   try {
@@ -153,6 +163,76 @@ async function openDemo() {
       activeTab.value = 'overview'
       killerFilter.value = ''
       victimFilter.value = ''
+      sourceSteamID64.value = ''
+      replacementName.value = ''
+      replacementSteamID64.value = ''
+      prefixSelectedSteamIDs.value = []
+      saveMessage.value = ''
+    }
+  } catch (error) {
+    errorMessage.value = String(error).replace(/^Error:\s*/, '')
+  } finally {
+    loading.value = false
+  }
+}
+
+function selectSourcePlayer() {
+  const player = selectedSourcePlayer.value
+  replacementName.value = player?.name ?? ''
+  replacementSteamID64.value = player?.steam_id64 ?? ''
+  saveMessage.value = ''
+}
+
+async function savePrefixedPlayer() {
+  if (!demo.value || !prefixSelectedSteamIDs.value.length) return
+  const prefixBytes = new TextEncoder().encode(namePrefix.value).length
+  if (!namePrefix.value.trim() || namePrefix.value.trimStart() !== namePrefix.value || prefixBytes > 30 || /[\\\x00-\x1f\x7f]/.test(namePrefix.value)) {
+    errorMessage.value = '前缀须为 1–30 字节，不能以空格开头或包含反斜杠、控制字符'
+    return
+  }
+  loadingAction.value = 'save'
+  loading.value = true
+  errorMessage.value = ''
+  saveMessage.value = ''
+  try {
+    const result = await SavePrefixedPlayers(demo.value.path, prefixSelectedSteamIDs.value, namePrefix.value)
+    if (result) {
+      demo.value = result as unknown as DemoData
+      replacementName.value = selectedSourcePlayer.value?.name ?? ''
+      saveMessage.value = `已为 ${prefixSelectedSteamIDs.value.length} 名玩家加前缀，保存至：${result.path}`
+    }
+  } catch (error) {
+    errorMessage.value = String(error).replace(/^Error:\s*/, '')
+  } finally {
+    loading.value = false
+  }
+}
+
+function selectAllPrefixPlayers() {
+  prefixSelectedSteamIDs.value = editablePlayers.value.flatMap((player) => player.steam_id64 ? [player.steam_id64] : [])
+}
+
+async function savePlayerReplacement() {
+  if (!demo.value || !sourceSteamID64.value) return
+  const nameBytes = new TextEncoder().encode(replacementName.value).length
+  if (!replacementName.value || replacementName.value.trim() !== replacementName.value || nameBytes > 31 || /[\\\x00-\x1f\x7f]/.test(replacementName.value)) {
+    errorMessage.value = '游戏内名称须为 1–31 字节，不能包含反斜杠、控制字符或首尾空格'
+    return
+  }
+  if (!/^\d{17}$/.test(replacementSteamID64.value)) {
+    errorMessage.value = '新 SteamID64 须为 17 位数字'
+    return
+  }
+  loadingAction.value = 'save'
+  loading.value = true
+  errorMessage.value = ''
+  saveMessage.value = ''
+  try {
+    const result = await SavePlayerReplacement(demo.value.path, sourceSteamID64.value, replacementName.value, replacementSteamID64.value)
+    if (result) {
+      demo.value = result as unknown as DemoData
+      sourceSteamID64.value = replacementSteamID64.value
+      saveMessage.value = `已保存修改后的 Demo：${result.path}`
     }
   } catch (error) {
     errorMessage.value = String(error).replace(/^Error:\s*/, '')
@@ -390,6 +470,28 @@ function statWidth(player: PlayerStat): string {
               <div><h2 class="text-sm font-semibold text-[var(--text)]">玩家统计</h2><p class="mt-1 text-xs text-[var(--text-faint)]">按 Demo 最后队伍状态分组，组内按真实击杀数排序</p></div>
               <div class="flex items-center gap-4 text-xs text-[var(--text-muted)]"><span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-orange-500"></span>{{ terroristPlayers.length }} T</span><span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-blue-500"></span>{{ ctPlayers.length }} CT</span><span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-slate-400"></span>{{ spectatorPlayers.length }} SPEC</span></div>
             </div>
+            <div class="border-b border-[var(--border)] bg-[var(--surface-subtle)] px-5 py-4">
+              <div class="flex flex-wrap items-end gap-3">
+                <div class="mr-3 min-w-[190px] flex-1"><h3 class="text-xs font-semibold text-[var(--text)]">修改玩家信息</h3><p class="mt-1 text-[10px] leading-5 text-[var(--text-muted)]">按原 SteamID64 定位，修改游戏内名称和 SteamID64，另存为新 Demo。</p></div>
+                <label class="flex min-w-[220px] flex-col gap-1.5"><span class="text-[10px] font-medium text-[var(--text-muted)]">原玩家 / SteamID64</span><select v-model="sourceSteamID64" class="h-9 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 text-xs text-[var(--text-secondary)] outline-none focus:border-[#7195cf]" @change="selectSourcePlayer"><option value="">选择玩家</option><option v-for="player in editablePlayers" :key="player.steam_id64" :value="player.steam_id64">{{ player.name }} · {{ player.steam_id64 }}</option></select></label>
+                <label class="flex min-w-[150px] flex-col gap-1.5"><span class="text-[10px] font-medium text-[var(--text-muted)]">新游戏内名称</span><input v-model="replacementName" type="text" class="h-9 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs text-[var(--text-secondary)] outline-none focus:border-[#7195cf]" placeholder="玩家名称" /></label>
+                <label class="flex min-w-[190px] flex-col gap-1.5"><span class="text-[10px] font-medium text-[var(--text-muted)]">新 SteamID64</span><input v-model="replacementSteamID64" type="text" inputmode="numeric" maxlength="17" class="h-9 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs text-[var(--text-secondary)] outline-none focus:border-[#7195cf]" placeholder="17 位数字" /></label>
+                <button class="h-9 shrink-0 rounded-lg bg-[#3564b6] px-4 text-xs font-semibold text-white transition hover:bg-[#2f599f] disabled:cursor-not-allowed disabled:opacity-50" :disabled="loading || !sourceSteamID64 || !replacementName || !replacementSteamID64" @click="savePlayerReplacement">另存修改后的 Demo</button>
+              </div>
+              <div class="mt-4 border-t border-[var(--border)] pt-4">
+                <div class="flex flex-wrap items-end gap-3">
+                  <div class="mr-3 min-w-[190px] flex-1"><h3 class="text-xs font-semibold text-[var(--text)]">给玩家加前缀</h3><p class="mt-1 text-[10px] leading-5 text-[var(--text-muted)]">勾选多名玩家，一次写入同一份新 Demo；SteamID64 保持不变。</p></div>
+                  <label class="flex min-w-[220px] flex-col gap-1.5"><span class="text-[10px] font-medium text-[var(--text-muted)]">自定义前缀</span><input v-model="namePrefix" type="text" class="h-9 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs text-[var(--text-secondary)] outline-none focus:border-[#7195cf]" placeholder="例如 [Team] " /></label>
+                  <button class="h-9 shrink-0 rounded-lg border border-[#3564b6] px-4 text-xs font-semibold text-[#3564b6] transition hover:bg-[var(--surface-active)] disabled:cursor-not-allowed disabled:opacity-50" :disabled="loading || !prefixSelectedSteamIDs.length || !namePrefix" @click="savePrefixedPlayer">为 {{ prefixSelectedSteamIDs.length }} 人加前缀并另存</button>
+                </div>
+                <div class="mt-3 flex items-center justify-between text-[10px] text-[var(--text-muted)]"><span>勾选玩家（已选 {{ prefixSelectedSteamIDs.length }} / {{ editablePlayers.length }}）</span><div class="flex gap-3"><button class="text-[var(--primary)] hover:underline" @click="selectAllPrefixPlayers">全选</button><button class="text-[var(--primary)] hover:underline" @click="prefixSelectedSteamIDs = []">清空</button></div></div>
+                <div v-if="editablePlayers.length" class="mt-2 grid max-h-40 grid-cols-1 gap-1 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <label v-for="player in editablePlayers" :key="player.steam_id64" class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-[var(--row-hover)]"><input v-model="prefixSelectedSteamIDs" type="checkbox" :value="player.steam_id64" class="accent-[#3564b6]" /><span class="min-w-0 truncate text-[var(--text-secondary)]" :title="`${player.name} · ${player.steam_id64}`">{{ player.name }}</span><span class="ml-auto shrink-0 text-[9px] text-[var(--text-faint)]">{{ player.steam_id64 }}</span></label>
+                </div>
+                <p v-else class="mt-2 text-xs text-[var(--text-faint)]">没有带 SteamID64 的可编辑玩家</p>
+              </div>
+              <p v-if="saveMessage" class="mt-3 break-all text-xs text-emerald-600">{{ saveMessage }}</p>
+            </div>
             <div class="grid grid-cols-[42px_minmax(220px,1.4fr)_90px_74px_74px_74px_90px_minmax(175px,1fr)] gap-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] px-5 py-3 text-[10px] font-medium text-[var(--text-faint)]">
               <span>排名</span><span>玩家</span><span>队伍</span><span class="text-right">真实击杀</span><span class="text-right">死亡</span><span class="text-right">K/D</span><span class="text-right">爆头</span><span>SteamID64</span>
             </div>
@@ -502,7 +604,7 @@ function statWidth(player: PlayerStat): string {
       <div v-if="loading" class="absolute inset-0 z-[100] grid place-items-center bg-black/20 backdrop-blur-[2px]">
         <div class="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-5 py-4 shadow-xl">
           <div class="h-5 w-5 animate-spin rounded-full border-2 border-[var(--border)] border-t-[#3564b6]"></div>
-          <div><p class="text-sm font-semibold text-[var(--text)]">正在解析 Demo</p><p class="mt-0.5 text-[10px] text-[var(--text-faint)]">读取 GoldSrc 网络帧</p></div>
+          <div><p class="text-sm font-semibold text-[var(--text)]">{{ loadingAction === 'save' ? '正在保存 Demo' : '正在解析 Demo' }}</p><p class="mt-0.5 text-[10px] text-[var(--text-faint)]">{{ loadingAction === 'save' ? '写入玩家信息并验证新文件' : '读取 GoldSrc 网络帧' }}</p></div>
         </div>
       </div>
     </Transition>

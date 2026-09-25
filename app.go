@@ -78,3 +78,66 @@ func (a *App) ParseDemo(path string) (*goldsrc.Demo, error) {
 	}
 	return demo, nil
 }
+
+// SavePlayerReplacement writes a new demo with all userinfo updates for the
+// selected SteamID64 changed to the requested game name and SteamID64.
+func (a *App) SavePlayerReplacement(path, sourceSteamID64, name, steamID64 string) (*goldsrc.Demo, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("请先打开 Demo")
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	base := strings.TrimSuffix(filepath.Base(absolute), filepath.Ext(absolute))
+	outputPath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:            "保存修改后的 Counter-Strike 1.6 Demo",
+		DefaultDirectory: filepath.Dir(absolute),
+		DefaultFilename:  base + "_edited.dem",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "GoldSrc Demo (*.dem)", Pattern: "*.dem"},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("打开保存对话框: %w", err)
+	}
+	if outputPath == "" {
+		return nil, nil
+	}
+	result, _, err := goldsrc.RewritePlayerFile(absolute, outputPath, goldsrc.PlayerReplacement{
+		SourceSteamID64: sourceSteamID64,
+		Name:            name,
+		SteamID64:       steamID64,
+	})
+	return result, err
+}
+
+// SavePrefixedPlayers adds a name prefix to selected players in a new demo file.
+func (a *App) SavePrefixedPlayers(path string, sourceSteamID64s []string, prefix string) (*goldsrc.Demo, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("请先打开 Demo")
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	base := strings.TrimSuffix(filepath.Base(absolute), filepath.Ext(absolute))
+	outputPath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:            "保存加前缀后的 Counter-Strike 1.6 Demo",
+		DefaultDirectory: filepath.Dir(absolute),
+		DefaultFilename:  base + "_prefixed.dem",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "GoldSrc Demo (*.dem)", Pattern: "*.dem"},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("打开保存对话框: %w", err)
+	}
+	if outputPath == "" {
+		return nil, nil
+	}
+	result, _, err := goldsrc.RewritePlayersPrefixFile(absolute, outputPath, sourceSteamID64s, prefix)
+	return result, err
+}
