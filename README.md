@@ -175,7 +175,7 @@ GoldSrc Demo 中并没有直接提供一张适合界面使用的“回合表”�
 
 | 层 | 技术 |
 | --- | --- |
-| 桌面容器 | Wails v2.15 |
+| 桌面容器 | Wails v2.16 |
 | 后端 | Go |
 | 前端 | Vue 3 + TypeScript |
 | 构建 | Vite 7 |
@@ -190,12 +190,12 @@ GoldSrc Demo 中并没有直接提供一张适合界面使用的“回合表”�
 - Go 1.26.4
 - Node.js 22.23.1
 - npm 11.17.0
-- Wails CLI 2.15.0
+- Wails CLI 2.16.0
 
 安装 Wails CLI：
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
 ```
 
 安装前端依赖：
